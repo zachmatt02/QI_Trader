@@ -1,0 +1,1 @@
+The active workforce. This folder contains the independent, running programs that actually do the work: pulling live market data, predicting price movements, enforcing safety rules, and sending the final buy/sell orders to the broker.

@@ -1,0 +1,1 @@
+The laboratory. This is purely for experimentation, containing your data analysis notebooks and historical backtesting code to mathematically prove a strategy works before letting it touch real money.
