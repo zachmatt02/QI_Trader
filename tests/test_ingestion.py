@@ -12,7 +12,15 @@ from agents.ingestion import mock_market_stream, main
 
 @pytest.mark.asyncio
 async def test_mock_market_stream():
-    """Test that the mock_market_stream yields correctly formatted ticks."""
+    """Test that the mock_market_stream yields correctly formatted ticks.
+
+    Points the gateway URL at an unreachable address so the test always
+    exercises the simulated fallback, even if a real gateway is running.
+    """
+    with patch("agents.ingestion.GATEWAY_BASE_URL", "https://127.0.0.1:1/v1/api"):
+        await _assert_simulated_stream()
+
+async def _assert_simulated_stream():
     async for tick in mock_market_stream():
         assert "timestamp" in tick
         assert isinstance(tick["timestamp"], datetime)
