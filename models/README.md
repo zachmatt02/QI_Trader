@@ -1,1 +1,0 @@
-The brain's memory bank. This stores the saved "weights" and mathematical formulas of your trained AI, as well as the scripts required to automatically retrain those models when market conditions change.
