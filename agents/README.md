@@ -18,4 +18,12 @@ The active workforce. This folder contains the independent, running programs tha
   * Simulates retrieving batches of aggregated market data (polling-based).
   * Serializes Polars DataFrames to JSON and prepares a prompt structure for the LLM.
   * Calls an AI model API (includes examples for OpenAI, Gemini, etc.) to analyze the data and return a JSON trading decision (`BUY`, `SELL`, `HOLD`) with a confidence level and reasoning.
-  * Logs the decisions and simulates forwarding actionable signals (`BUY` or `SELL`) to an Execution Agent.
+  * Forwards actionable signals (`BUY` or `SELL`) to the Execution Agent.
+
+### 3. Execution Agent (`execution.py`)
+* **Role**: Places stock orders through the IBKR Client Portal Gateway.
+* **Functionality**:
+  * Previews orders via the gateway's `/whatif` endpoint (estimated cost, commission, margin impact) before submitting.
+  * Places limit orders and automatically answers the gateway's confirmation prompts (price-cap warnings etc.), then polls the order until it reaches a terminal status.
+  * Safety rails: `DRY_RUN=1` by default (preview only — set `DRY_RUN=0` to trade), order size capped at `MAX_ORDER_QTY` (default 10), and refuses non-paper accounts unless `ALLOW_LIVE=1`.
+  * One-off order from the shell: `DRY_RUN=0 SIDE=BUY QTY=1 LIMIT_PRICE=420 TICKER=TSLA ./agents/execution.py`

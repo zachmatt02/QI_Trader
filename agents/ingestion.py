@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # agents/data/ingestion.py
 import polars as pl
 import asyncio
@@ -15,7 +16,7 @@ from datetime import datetime
 GATEWAY_BASE_URL = os.environ.get("IB_GATEWAY_URL", "https://localhost:5001/v1/api")
 GATEWAY_WS_URL = "wss" + GATEWAY_BASE_URL[len("https"):] + "/ws"
 
-TICKER = "TSLA"
+TICKER = os.environ.get("TICKER", "TSLA")
 
 # Client Portal streaming tick fields (see gateway/doc/RealtimeSubscription.md):
 FIELD_LAST_PRICE = "31"

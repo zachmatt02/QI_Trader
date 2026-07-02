@@ -5,6 +5,11 @@ import random
 from datetime import datetime
 import polars as pl
 
+try:
+    from agents.execution import execute_signal
+except ImportError:  # when run directly as ./agents/strategy.py
+    from execution import execute_signal
+
 # To use real HTTP calls, you would install aiohttp: `pip install aiohttp`
 # import aiohttp 
 
@@ -106,6 +111,13 @@ async def process_data_stream():
         
         if ai_response.get("decision") in ["BUY", "SELL"]:
             print(f"--> Actionable signal! Forwarding {ai_response['decision']} order to Execution Agent...")
+            try:
+                # Uses the latest tick as the limit price. execution.py defaults
+                # to DRY_RUN (preview only); set DRY_RUN=0 to actually trade.
+                await execute_signal(ai_response["decision"],
+                                     df["ticker"][0], float(df["price"][-1]))
+            except Exception as e:
+                print(f"--> Execution Agent failed: {e}")
         else:
             print("--> Holding position. No action taken.")
             
