@@ -15,17 +15,17 @@ Run directly for a one-off order:
 import asyncio
 import json
 import os
-import ssl
 import time
 import uuid
 from datetime import datetime
 
 import aiohttp
 
-# Same gateway as ingestion.py (see the comments there for how to start it).
-GATEWAY_BASE_URL = os.environ.get("IB_GATEWAY_URL", "https://localhost:5001/v1/api")
+try:
+    from agents.ib_gateway import GATEWAY_BASE_URL, TICKER, ssl_context
+except ImportError:  # when run directly as ./agents/execution.py
+    from ib_gateway import GATEWAY_BASE_URL, TICKER, ssl_context
 
-TICKER = os.environ.get("TICKER", "TSLA")
 MAX_ORDER_QTY = int(os.environ.get("MAX_ORDER_QTY", "10"))
 DRY_RUN = os.environ.get("DRY_RUN", "1") != "0"
 ALLOW_LIVE = os.environ.get("ALLOW_LIVE") == "1"
@@ -34,15 +34,6 @@ ALLOW_LIVE = os.environ.get("ALLOW_LIVE") == "1"
 # warnings etc.) instead of an order id; each must be confirmed via
 # /iserver/reply before the order is actually submitted.
 MAX_CONFIRMATIONS = 5
-
-
-def _ssl_context():
-    # The gateway serves a self-signed certificate (vertx.jks), so
-    # certificate and hostname verification must be disabled.
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    return ctx
 
 
 async def get_account_id(session):
@@ -150,7 +141,7 @@ async def cancel_order(session, account_id, order_id):
 async def execute_signal(side, ticker, limit_price, quantity=1):
     """End-to-end entry point for the Strategy Agent: previews — and, unless
     DRY_RUN is on, places and tracks — a limit order for `ticker`."""
-    session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=_ssl_context()))
+    session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_context()))
     try:
         account_id = await get_account_id(session)
         conid = await search_conid(session, ticker)

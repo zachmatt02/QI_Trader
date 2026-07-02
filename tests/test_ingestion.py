@@ -2,11 +2,6 @@ import pytest
 import asyncio
 from datetime import datetime
 from unittest.mock import patch
-import sys
-import os
-
-# Ensure the project root is in the Python path so we can import 'agents'
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from agents.ingestion import mock_market_stream, main
 

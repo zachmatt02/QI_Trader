@@ -1,35 +1,20 @@
 #!/usr/bin/env python3
-# agents/data/ingestion.py
+# agents/ingestion.py
 import polars as pl
 import asyncio
-import os
 import json
-import ssl
 import aiohttp
 import random
 from datetime import datetime
 
-# IBKR Client Portal Gateway (the gateway/ folder in this repo).
-# Start it with:  cd gateway && bin/run.sh root/conf.yaml
-# then log in once via a browser at https://localhost:5001
-# (root/conf.yaml sets listenPort: 5001 with SSL enabled).
-GATEWAY_BASE_URL = os.environ.get("IB_GATEWAY_URL", "https://localhost:5001/v1/api")
-GATEWAY_WS_URL = "wss" + GATEWAY_BASE_URL[len("https"):] + "/ws"
-
-TICKER = os.environ.get("TICKER", "TSLA")
+try:
+    from agents.ib_gateway import GATEWAY_BASE_URL, GATEWAY_WS_URL, TICKER, ssl_context
+except ImportError:  # when run directly as ./agents/ingestion.py
+    from ib_gateway import GATEWAY_BASE_URL, GATEWAY_WS_URL, TICKER, ssl_context
 
 # Client Portal streaming tick fields (see gateway/doc/RealtimeSubscription.md):
 FIELD_LAST_PRICE = "31"
 FIELD_LAST_SIZE = "7059"
-
-
-def _ssl_context():
-    # The gateway serves a self-signed certificate (vertx.jks), so
-    # certificate and hostname verification must be disabled.
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    return ctx
 
 
 async def _prepare_gateway(session):
@@ -94,7 +79,7 @@ async def mock_market_stream():
     """Streams live market ticks from the IBKR Client Portal Gateway if it is
     running and authenticated, otherwise falls back to a simulated stream.
     """
-    session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=_ssl_context()))
+    session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_context()))
     try:
         conid, ws_token = await _prepare_gateway(session)
     except Exception as e:

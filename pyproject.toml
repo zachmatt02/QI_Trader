@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qi-trader"
+version = "0.1.0"
+description = "Agent-based trading pipeline on the IBKR Client Portal Gateway"
+requires-python = ">=3.12"
+dependencies = [
+    "aiohttp",
+    "polars",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[tool.setuptools]
+packages = ["agents"]
+
+[tool.pytest.ini_options]
+# Puts the repo root on sys.path so tests can import `agents` without hacks.
+pythonpath = ["."]
+asyncio_default_fixture_loop_scope = "function"

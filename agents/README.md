@@ -27,3 +27,6 @@ The active workforce. This folder contains the independent, running programs tha
   * Places limit orders and automatically answers the gateway's confirmation prompts (price-cap warnings etc.), then polls the order until it reaches a terminal status.
   * Safety rails: `DRY_RUN=1` by default (preview only — set `DRY_RUN=0` to trade), order size capped at `MAX_ORDER_QTY` (default 10), and refuses non-paper accounts unless `ALLOW_LIVE=1`.
   * One-off order from the shell: `DRY_RUN=0 SIDE=BUY QTY=1 LIMIT_PRICE=420 TICKER=TSLA ./agents/execution.py`
+
+### Shared: IBKR Gateway Settings (`ib_gateway.py`)
+Not an agent — the connection settings (`GATEWAY_BASE_URL`, `GATEWAY_WS_URL`, `TICKER`) and the self-signed-certificate `ssl_context()` helper shared by the ingestion and execution agents.

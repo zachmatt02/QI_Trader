@@ -8,8 +8,8 @@ The safety checkpoint. This holds automated diagnostic scripts that check your c
 This test suite verifies the functionality of the Data Ingestion Agent (`agents/ingestion.py`).
 
 #### How the Tests Work
-* **Environment Setup & Path Resolution**:
-  - Dynamically adds the parent directory to Python's system path (`sys.path.insert(...)`) so it can import the `agents` modules.
+* **Path Resolution**:
+  - `pyproject.toml` sets `[tool.pytest.ini_options] pythonpath = ["."]`, which puts the repo root on Python's path so the tests can import the `agents` package directly.
 * **Async Integration (`pytest-asyncio`)**:
   - Since the ingestion code is asynchronous (using async generator loops and coroutines), the tests are marked with `@pytest.mark.asyncio` to execute them inside a running async event loop.
 * **Mock Market Stream Test (`test_mock_market_stream`)**:
@@ -35,6 +35,6 @@ This test suite verifies the functionality of the AI Strategy Agent (`agents/str
 ## Running the Tests
 To run the test suite, ensure the virtual environment is used:
 ```bash
-./.venv/bin/pytest
+./venv/bin/pytest
 ```
 

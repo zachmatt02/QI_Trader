@@ -3,11 +3,6 @@ import asyncio
 from datetime import datetime
 from unittest.mock import patch, AsyncMock
 import polars as pl
-import sys
-import os
-
-# Ensure the project root is in the Python path so we can import 'agents'
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from agents.strategy import call_ai_api, process_data_stream
 
