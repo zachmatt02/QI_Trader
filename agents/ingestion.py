@@ -17,8 +17,8 @@ FIELD_LAST_PRICE = "31"
 FIELD_LAST_SIZE = "7059"
 
 
-async def _prepare_gateway(session):
-    """Validates the gateway session and resolves the contract id for TICKER.
+async def _prepare_gateway(session, ticker=TICKER):
+    """Validates the gateway session and resolves the contract id for ticker.
     Returns (conid, websocket session token).
     """
     # /iserver/accounts must be queried once before other /iserver endpoints
@@ -28,10 +28,10 @@ async def _prepare_gateway(session):
                                "log in via browser at the gateway URL first")
 
     async with session.post(f"{GATEWAY_BASE_URL}/iserver/secdef/search",
-                            json={"symbol": TICKER, "secType": "STK"}) as resp:
+                            json={"symbol": ticker, "secType": "STK"}) as resp:
         results = await resp.json()
     if not results:
-        raise RuntimeError(f"no contract found for {TICKER}")
+        raise RuntimeError(f"no contract found for {ticker}")
     conid = int(results[0]["conid"])
 
     # /tickle keeps the session alive and returns the token the websocket
@@ -51,7 +51,7 @@ async def _heartbeat(ws):
         await ws.send_str("ech+hb")
 
 
-def _parse_tick(data):
+def _parse_tick(data, ticker=TICKER):
     """Converts an smd update into our tick dict. Updates are deltas, so the
     last-price field is only present when a trade happened; skip the rest.
     """
@@ -69,35 +69,36 @@ def _parse_tick(data):
     updated_ms = data.get("_updated")
     return {
         "timestamp": datetime.fromtimestamp(updated_ms / 1000) if updated_ms else datetime.now(),
-        "ticker": TICKER,
+        "ticker": ticker,
         "price": float(price_str),
         "volume": volume
     }
 
 
-async def mock_market_stream():
+async def mock_market_stream(ticker=TICKER):
     """Streams live market ticks from the IBKR Client Portal Gateway if it is
     running and authenticated, otherwise falls back to a simulated stream.
     """
     session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_context()))
     try:
-        conid, ws_token = await _prepare_gateway(session)
+        conid, ws_token = await _prepare_gateway(session, ticker)
     except Exception as e:
         await session.close()
         print(f"IBKR gateway not available at {GATEWAY_BASE_URL} ({e}). "
-              "Falling back to simulated market stream...")
+              "Falling back to simulated market stream...", flush=True)
         while True:
-            # Simulating TSLA data for testing
+            # Simulating market data for testing
             yield {
                 "timestamp": datetime.now(),
-                "ticker": TICKER,
+                "ticker": ticker,
                 "price": round(random.uniform(180.0, 185.0), 2),
                 "volume": random.randint(10, 500)
             }
             # Simulating a 100ms tick latency
             await asyncio.sleep(0.1)
 
-    print(f"Connected to IBKR gateway ({TICKER} conid={conid}). Opening websocket...")
+    print(f"Connected to IBKR gateway ({ticker} conid={conid}). Opening websocket...",
+          flush=True)
     try:
         async with session.ws_connect(GATEWAY_WS_URL) as ws:
             # Authorize the websocket with the session token from /tickle
@@ -118,9 +119,10 @@ async def mock_market_stream():
                             fields = json.dumps({"fields": [FIELD_LAST_PRICE, FIELD_LAST_SIZE]})
                             await ws.send_str(f"smd+{conid}+{fields}")
                             subscribed = True
-                            print(f"Subscribed to {TICKER} trades. Streaming live ticks...")
+                            print(f"Subscribed to {ticker} trades. Streaming live ticks...",
+                                  flush=True)
                         elif topic == f"smd+{conid}":
-                            tick = _parse_tick(data)
+                            tick = _parse_tick(data, ticker)
                             if tick:
                                 yield tick
                     elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):

@@ -28,5 +28,12 @@ The active workforce. This folder contains the independent, running programs tha
   * Safety rails: `DRY_RUN=1` by default (preview only — set `DRY_RUN=0` to trade), order size capped at `MAX_ORDER_QTY` (default 10), and refuses non-paper accounts unless `ALLOW_LIVE=1`.
   * One-off order from the shell: `DRY_RUN=0 SIDE=BUY QTY=1 LIMIT_PRICE=420 TICKER=TSLA ./agents/execution.py`
 
+### Control Dashboard (`dashboard.py`)
+* **Role**: Local web UI to control the ingestion and execution agents by hand.
+* **Functionality**:
+  * Start/stop the ingestion tick stream and watch it live: last price, tick count, a price chart with hover readout, and a recent-ticks table.
+  * Preview (`/whatif`) and submit limit orders through the execution agent's functions — same safety rails: Submit is disabled while `DRY_RUN=1` (the default), quantity capped at `MAX_ORDER_QTY`, non-paper accounts refused without `ALLOW_LIVE=1`.
+  * Binds to localhost only (it can place orders). Run with `./venv/bin/python agents/dashboard.py`, then open http://127.0.0.1:8080 (port via `DASHBOARD_PORT`).
+
 ### Shared: IBKR Gateway Settings (`ib_gateway.py`)
 Not an agent — the connection settings (`GATEWAY_BASE_URL`, `GATEWAY_WS_URL`, `TICKER`) and the self-signed-certificate `ssl_context()` helper shared by the ingestion and execution agents.
