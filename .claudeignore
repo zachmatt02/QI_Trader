@@ -1,0 +1,36 @@
+# Virtual Environments
+venv/
+.venv/
+env/
+
+# Data and Logs
+data/
+*.log
+*.ndjson
+*.csv
+*.parquet
+*.jsonl
+
+# Python & testing cache directories
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ipynb_checkpoints/
+.eggs/
+*.egg-info/
+build/
+dist/
+
+# Git and AI/IDE configuration folders
+.git/
+.claude/
+.idea/
+.vscode/
+.DS_Store
+.env
+.env.*
+
+# External components/Gateways
+gateway/

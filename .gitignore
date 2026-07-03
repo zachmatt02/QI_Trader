@@ -15,3 +15,6 @@ __pycache__/
 
 # Gateway
 gateway/
+
+# Recorded tick data (written by the ingestion agent)
+data/

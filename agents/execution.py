@@ -5,7 +5,6 @@
 Safety rails:
   * DRY_RUN=1 (the default) only previews the order via /whatif — nothing is
     submitted. Set DRY_RUN=0 to actually place orders.
-  * Order size is capped at MAX_ORDER_QTY shares (default 10).
   * Refuses to trade on a non-paper account (id not starting with "DU")
     unless ALLOW_LIVE=1 is set explicitly.
 
@@ -26,7 +25,6 @@ try:
 except ImportError:  # when run directly as ./agents/execution.py
     from ib_gateway import GATEWAY_BASE_URL, TICKER, ssl_context
 
-MAX_ORDER_QTY = int(os.environ.get("MAX_ORDER_QTY", "10"))
 DRY_RUN = os.environ.get("DRY_RUN", "1") != "0"
 ALLOW_LIVE = os.environ.get("ALLOW_LIVE") == "1"
 
@@ -62,9 +60,8 @@ def build_order(conid, side, quantity, price=None, order_type="LMT", tif="DAY"):
     side = side.upper()
     if side not in ("BUY", "SELL"):
         raise ValueError(f"side must be BUY or SELL, got {side!r}")
-    if not 0 < quantity <= MAX_ORDER_QTY:
-        raise ValueError(f"quantity must be between 1 and {MAX_ORDER_QTY} "
-                         "(raise MAX_ORDER_QTY to allow more)")
+    if quantity <= 0:
+        raise ValueError(f"quantity must be positive, got {quantity}")
     order = {
         "conid": conid,
         "orderType": order_type,

@@ -2,10 +2,13 @@
 # agents/ingestion.py
 import polars as pl
 import asyncio
+import io
 import json
+import time
 import aiohttp
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
+from pathlib import Path
 
 try:
     from agents.ib_gateway import GATEWAY_BASE_URL, GATEWAY_WS_URL, TICKER, ssl_context
@@ -15,6 +18,91 @@ except ImportError:  # when run directly as ./agents/ingestion.py
 # Client Portal streaming tick fields (see gateway/doc/RealtimeSubscription.md):
 FIELD_LAST_PRICE = "31"
 FIELD_LAST_SIZE = "7059"
+
+# Strict tick schema shared by every agent that writes or reads tick data
+SCHEMA = {
+    "timestamp": pl.Datetime,
+    "ticker": pl.String,
+    "price": pl.Float64,
+    "volume": pl.Int64
+}
+
+# Recorded ticks live in data/ticks/<ticker>-<date>.ndjson at the repo root
+DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "ticks"
+# strftime always emits the fractional part so every stored line parses the same
+_TIME_WRITE_FORMAT = "%Y-%m-%dT%H:%M:%S.%f"
+_TIME_READ_FORMAT = "%Y-%m-%dT%H:%M:%S%.f"  # chrono spelling of the same format
+
+
+def _tick_path(ticker, day):
+    safe = "".join(c if c.isalnum() or c in ".-" else "_" for c in ticker)
+    return DATA_DIR / f"{safe}-{day:%Y-%m-%d}.ndjson"
+
+
+class TickStore:
+    """Buffers ticks and appends them to per-ticker, per-day NDJSON files so
+    other agents (e.g. strategy) can read them back via load_recent_ticks().
+    Each flush appends whole lines in a single write, so a concurrent reader
+    never sees a torn record.
+    """
+
+    def __init__(self, flush_every=20, max_age_seconds=5.0):
+        self.flush_every = flush_every
+        self.max_age_seconds = max_age_seconds
+        self._buffer = []
+        self._last_flush = time.monotonic()
+
+    def add(self, tick):
+        """Buffers one tick. Returns the batch that was flushed to disk, or
+        [] if the tick was only buffered."""
+        self._buffer.append(tick)
+        if (len(self._buffer) >= self.flush_every or
+                time.monotonic() - self._last_flush >= self.max_age_seconds):
+            return self.flush()
+        return []
+
+    def flush(self):
+        batch, self._buffer = self._buffer, []
+        self._last_flush = time.monotonic()
+        if not batch:
+            return batch
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        # group per file: a batch can straddle midnight or (later) mix tickers
+        chunks = {}
+        for tick in batch:
+            path = _tick_path(tick["ticker"], tick["timestamp"])
+            chunks.setdefault(path, []).append(json.dumps({
+                "timestamp": tick["timestamp"].strftime(_TIME_WRITE_FORMAT),
+                "ticker": tick["ticker"],
+                "price": tick["price"],
+                "volume": tick["volume"],
+            }))
+        for path, lines in chunks.items():
+            with open(path, "a") as f:
+                f.write("\n".join(lines) + "\n")
+        return batch
+
+
+def load_recent_ticks(ticker, minutes=15.0):
+    """Returns the last `minutes` of recorded ticks for `ticker` as a
+    DataFrame with SCHEMA, sorted by timestamp (empty if nothing is stored)."""
+    now = datetime.now()
+    cutoff = now - timedelta(minutes=minutes)
+    frames = []
+    for day in sorted({cutoff.date(), now.date()}):
+        path = _tick_path(ticker, day)
+        if not path.exists():
+            continue
+        raw = path.read_bytes()
+        raw = raw[:raw.rfind(b"\n") + 1]  # drop a partially appended last line
+        if raw:
+            frames.append(pl.read_ndjson(
+                io.BytesIO(raw), schema={**SCHEMA, "timestamp": pl.String}))
+    if not frames:
+        return pl.DataFrame(schema=SCHEMA)
+    df = pl.concat(frames).with_columns(
+        pl.col("timestamp").str.to_datetime(_TIME_READ_FORMAT))
+    return df.filter(pl.col("timestamp") >= cutoff).sort("timestamp")
 
 
 async def _prepare_gateway(session, ticker=TICKER):
@@ -136,34 +224,18 @@ async def mock_market_stream(ticker=TICKER):
 
 async def main():
     print("Starting Data Agent initialization...")
+    print(f"Recording ticks to {DATA_DIR}")
 
-    # Define the strict schema for Polars
-    schema = {
-        "timestamp": pl.Datetime,
-        "ticker": pl.String,
-        "price": pl.Float64,
-        "volume": pl.Int64
-    }
-
-    # Buffer to hold ticks before converting to a DataFrame
-    buffer = []
+    # Batches ticks and appends them to data/ticks/ for the Strategy Agent
+    store = TickStore()
 
     async for tick in mock_market_stream():
-        buffer.append(tick)
-
-        # Process and flush the buffer in batches of 20 ticks
-        if len(buffer) >= 20:
-            # Convert the list of dicts into a Polars DataFrame
-            df = pl.DataFrame(buffer, schema=schema)
-
-            # Example Polars operation: Calculate VWAP or simple rolling metrics
-            # In a real system, you would append this DataFrame to a TimescaleDB instance
-            # or save it as a Parquet file for the Strategy Agent to read.
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] Processed Batch of {len(df)} ticks.")
+        batch = store.add(tick)
+        if batch:
+            df = pl.DataFrame(batch, schema=SCHEMA)
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Stored batch of {len(df)} ticks.")
             print(df.head(5))
             print("-" * 40)
-
-            buffer.clear()
 
 if __name__ == "__main__":
     try:

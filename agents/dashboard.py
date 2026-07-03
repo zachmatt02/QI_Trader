@@ -35,10 +35,13 @@ DASHBOARD_PORT = int(os.environ.get("DASHBOARD_PORT", "8080"))
 # ---------------------------------------------------------------- ingestion
 
 async def _ingest(app):
-    """Consumes the ingestion agent's tick stream into the shared buffer."""
+    """Consumes the ingestion agent's tick stream into the shared buffer and
+    records it to data/ticks/ for the strategy agent."""
     stream = ingestion.mock_market_stream(app["ticker"])
+    store = ingestion.TickStore()
     try:
         async for tick in stream:
+            store.add(tick)
             app["tick_count"] += 1
             app["ticks"].append({
                 "timestamp": tick["timestamp"].isoformat(),
@@ -47,6 +50,7 @@ async def _ingest(app):
                 "volume": tick["volume"],
             })
     finally:
+        store.flush()
         await stream.aclose()
 
 
@@ -109,7 +113,6 @@ async def api_status(request):
         "gateway_url": GATEWAY_BASE_URL,
         "dry_run": execution.DRY_RUN,
         "allow_live": execution.ALLOW_LIVE,
-        "max_order_qty": execution.MAX_ORDER_QTY,
         "default_ticker": TICKER,
     })
 
@@ -371,10 +374,9 @@ function render() {
     : "Stopped — press Start to stream ticks.";
 
   $("submit-btn").disabled = s.dry_run || orderPending;
-  $("f-qty").max = s.max_order_qty;
   $("order-note").textContent = s.dry_run
-    ? "DRY_RUN is on: Submit is disabled; restart with DRY_RUN=0 to trade. Max quantity " + s.max_order_qty + "."
-    : "Orders will be submitted to the gateway. Max quantity " + s.max_order_qty + ".";
+    ? "DRY_RUN is on: Submit is disabled; restart with DRY_RUN=0 to trade."
+    : "Orders will be submitted to the gateway.";
 
   drawChart(ticks);
   drawTable(ticks);
