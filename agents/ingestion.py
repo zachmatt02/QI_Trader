@@ -6,7 +6,6 @@ import io
 import json
 import time
 import aiohttp
-import random
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -163,31 +162,15 @@ def _parse_tick(data, ticker=TICKER):
     }
 
 
-async def mock_market_stream(ticker=TICKER):
-    """Streams live market ticks from the IBKR Client Portal Gateway if it is
-    running and authenticated, otherwise falls back to a simulated stream.
+async def market_stream(ticker=TICKER):
+    """Streams live market ticks from the IBKR Client Portal Gateway.
+    Raises if the gateway is unreachable or its session is not authenticated.
     """
     session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_context()))
     try:
         conid, ws_token = await _prepare_gateway(session, ticker)
-    except Exception as e:
-        await session.close()
-        print(f"IBKR gateway not available at {GATEWAY_BASE_URL} ({e}). "
-              "Falling back to simulated market stream...", flush=True)
-        while True:
-            # Simulating market data for testing
-            yield {
-                "timestamp": datetime.now(),
-                "ticker": ticker,
-                "price": round(random.uniform(180.0, 185.0), 2),
-                "volume": random.randint(10, 500)
-            }
-            # Simulating a 100ms tick latency
-            await asyncio.sleep(0.1)
-
-    print(f"Connected to IBKR gateway ({ticker} conid={conid}). Opening websocket...",
-          flush=True)
-    try:
+        print(f"Connected to IBKR gateway ({ticker} conid={conid}). Opening websocket...",
+              flush=True)
         async with session.ws_connect(GATEWAY_WS_URL) as ws:
             # Authorize the websocket with the session token from /tickle
             await ws.send_str(json.dumps({"session": ws_token}))
@@ -229,7 +212,7 @@ async def main():
     # Batches ticks and appends them to data/ticks/ for the Strategy Agent
     store = TickStore()
 
-    async for tick in mock_market_stream():
+    async for tick in market_stream():
         batch = store.add(tick)
         if batch:
             df = pl.DataFrame(batch, schema=SCHEMA)

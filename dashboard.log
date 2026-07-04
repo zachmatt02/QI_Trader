@@ -1,9 +1,19 @@
-/home/matasic/Documents/Projects/QI_Trader/agents/dashboard.py:72: DeprecationWarning: Changing state of started or joined application is deprecated
+/home/matasic/Documents/Projects/QI_Trader/agents/dashboard.py:76: DeprecationWarning: Changing state of started or joined application is deprecated
   app["ticker"] = ticker
-/home/matasic/Documents/Projects/QI_Trader/agents/dashboard.py:82: DeprecationWarning: Changing state of started or joined application is deprecated
+/home/matasic/Documents/Projects/QI_Trader/agents/dashboard.py:86: DeprecationWarning: Changing state of started or joined application is deprecated
   app["ingestion_task"] = asyncio.create_task(_ingest(app))
 QI Trader dashboard on http://127.0.0.1:8080 (DRY_RUN=off)
 Connected to IBKR gateway (7203 conid=13905804). Opening websocket...
 Subscribed to 7203 trades. Streaming live ticks...
-/home/matasic/Documents/Projects/QI_Trader/agents/dashboard.py:45: DeprecationWarning: Changing state of started or joined application is deprecated
+/home/matasic/Documents/Projects/QI_Trader/agents/dashboard.py:49: DeprecationWarning: Changing state of started or joined application is deprecated
   app["tick_count"] += 1
+/home/matasic/Documents/Projects/QI_Trader/agents/dashboard.py:99: DeprecationWarning: Changing state of started or joined application is deprecated
+  app["ingestion_task"] = None
+  Order 1673047954: Submitted
+  Order 1673047959: Submitted
+Connected to IBKR gateway (7203 conid=13905804). Opening websocket...
+Subscribed to 7203 trades. Streaming live ticks...
+Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x725e5b380590>
+Connected to IBKR gateway (7203 conid=13905804). Opening websocket...
+Subscribed to 7203 trades. Streaming live ticks...

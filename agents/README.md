@@ -33,6 +33,7 @@ The active workforce. This folder contains the independent, running programs tha
 * **Functionality**:
   * Start/stop the ingestion tick stream and watch it live: last price, tick count, a price chart with hover readout, and a recent-ticks table. Streamed ticks are also recorded to `data/ticks/` for the strategy agent.
   * Preview (`/whatif`) and submit limit orders through the execution agent's functions — same safety rails: Submit is disabled while `DRY_RUN=1` (the default), non-paper accounts refused without `ALLOW_LIVE=1`.
+  * A Transactions page (`/transactions`) showing everything in the transaction ledger (`data/transactions.db`): every recorded trade with all its columns (filterable by ticker, auto-refreshing) and net positions per ticker.
   * Binds to localhost only (it can place orders). Run with `./venv/bin/python agents/dashboard.py`, then open http://127.0.0.1:8080 (port via `DASHBOARD_PORT`).
 
 ### Shared: Technical Indicators (`features.py`)
@@ -40,6 +41,9 @@ Not an agent — rolling indicators over tick DataFrames: `compute_indicators()`
 
 ### Shared: Risk Rails (`risk.py`)
 Not an agent — `RiskManager` vetoes orders that break the hard limits, all enforced in code (never by the model): `MAX_POSITION` (±shares), `MAX_ORDER_NOTIONAL`, `ORDER_COOLDOWN_SECONDS` between order attempts, `MAX_DAILY_LOSS` (realized, per day), and a kill switch (`touch data/KILL_SWITCH` blocks all orders until removed). Position/P&L state survives restarts in `data/risk/<ticker>.json`.
+
+### Shared: Transaction Ledger (`transactions.py`)
+Not an agent — a SQLite ledger (`data/transactions.db`, path via `TRANSACTIONS_DB`) with a single `transactions` table recording every executed trade: ticker, ISIN, share price, currency, datetime (UTC), shares, buy flag (1 = buy, 0 = sell), plus broker context (order id, account, conid, commission, status). The Execution Agent and dashboard insert a row automatically whenever an order fills; `record_transaction()`, `list_transactions()` and `position()` are available for other agents. Run `./agents/transactions.py` to initialise the file and print recorded trades and net positions.
 
 ### Shared: IBKR Gateway Settings (`ib_gateway.py`)
 Not an agent — the connection settings (`GATEWAY_BASE_URL`, `GATEWAY_WS_URL`, `TICKER`) and the self-signed-certificate `ssl_context()` helper shared by the ingestion and execution agents.

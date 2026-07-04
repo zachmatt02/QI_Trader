@@ -6,6 +6,8 @@ Serves a small web UI on http://127.0.0.1:8080 (localhost only, since it can
 place orders) that can:
   * pick a ticker, start/stop its ingestion market-data stream and watch live ticks
   * preview (/whatif) and submit limit orders through the execution agent
+  * browse the transaction ledger on /transactions: every column of every
+    recorded trade (data/transactions.db) plus net positions per ticker
 
 The execution safety rails still apply: while DRY_RUN is on (the default) the
 Submit button is disabled and the API refuses to place orders — only previews
@@ -16,17 +18,19 @@ Run:  ./venv/bin/python agents/dashboard.py   (or DASHBOARD_PORT=<port> ...)
 """
 import asyncio
 import os
+import sqlite3
 from collections import deque
 
 import aiohttp
 from aiohttp import web
 
 try:
-    from agents import execution, ingestion
+    from agents import execution, ingestion, transactions
     from agents.ib_gateway import GATEWAY_BASE_URL, TICKER, ssl_context
 except ImportError:  # when run directly as ./agents/dashboard.py
     import execution
     import ingestion
+    import transactions
     from ib_gateway import GATEWAY_BASE_URL, TICKER, ssl_context
 
 DASHBOARD_PORT = int(os.environ.get("DASHBOARD_PORT", "8080"))
@@ -37,7 +41,7 @@ DASHBOARD_PORT = int(os.environ.get("DASHBOARD_PORT", "8080"))
 async def _ingest(app):
     """Consumes the ingestion agent's tick stream into the shared buffer and
     records it to data/ticks/ for the strategy agent."""
-    stream = ingestion.mock_market_stream(app["ticker"])
+    stream = ingestion.market_stream(app["ticker"])
     store = ingestion.TickStore()
     try:
         async for tick in stream:
@@ -162,6 +166,8 @@ async def api_order(request):
             placed = await execution.place_order(session, account_id, order)
             final = await execution.wait_for_status(
                 session, placed["order_id"], timeout=20)
+            execution.record_fill(final, account_id, ticker, quantity,
+                                  limit_price)
             result["submitted"] = True
             result["order_id"] = placed["order_id"]
             result["final_status"] = (final or {}).get(
@@ -177,19 +183,41 @@ async def api_order(request):
         await session.close()
 
 
+# ------------------------------------------------------------- transactions
+
+async def api_transactions(request):
+    ticker = (request.query.get("ticker") or "").strip().upper() or None
+    try:
+        limit = max(1, min(int(request.query.get("limit", "500")), 5000))
+    except ValueError:
+        return web.json_response({"error": "limit must be a number"}, status=400)
+
+    def read():  # sqlite is blocking, so read off the event loop
+        return {
+            "transactions": transactions.list_transactions(ticker=ticker,
+                                                           limit=limit),
+            "positions": transactions.positions(),
+            "total": transactions.count_transactions(ticker),
+            "db_path": str(transactions.DB_PATH),
+        }
+    try:
+        return web.json_response(await asyncio.to_thread(read))
+    except sqlite3.Error as e:
+        return web.json_response(
+            {"error": f"transaction ledger unreadable: {e}"}, status=500)
+
+
 # ------------------------------------------------------------------- web ui
 
 async def index(request):
     return web.Response(text=PAGE, content_type="text/html")
 
 
-PAGE = """<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>QI Trader — Control</title>
-<style>
+async def transactions_page(request):
+    return web.Response(text=PAGE_TRANSACTIONS, content_type="text/html")
+
+
+BASE_STYLE = """<style>
   :root {
     --page: #f9f9f7; --surface-1: #fcfcfb;
     --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
@@ -215,6 +243,8 @@ PAGE = """<!doctype html>
   .chip { font-size: 12px; color: var(--text-secondary); background: var(--surface-1);
           border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px;
           display: inline-flex; align-items: center; gap: 6px; }
+  a.chip { text-decoration: none; }
+  a.chip:hover { border-color: var(--text-muted); }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); }
   .dot.on { background: var(--good); }
   .card { background: var(--surface-1); border: 1px solid var(--border);
@@ -264,7 +294,16 @@ PAGE = """<!doctype html>
   #order-result dt { color: var(--text-secondary); }
   #order-result dd { font-variant-numeric: tabular-nums; }
   .note { font-size: 12px; color: var(--text-muted); margin-top: 10px; }
-</style>
+</style>"""
+
+
+PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QI Trader — Control</title>
+""" + BASE_STYLE + """
 </head>
 <body>
 <div class="wrap">
@@ -273,6 +312,7 @@ PAGE = """<!doctype html>
     <span class="chip"><span class="dot" id="ingest-dot"></span><span id="ingest-chip">Stopped</span></span>
     <span class="chip" id="dryrun-chip">…</span>
     <span class="chip" id="gateway-chip">gateway: …</span>
+    <a class="chip" href="/transactions">Transactions &rarr;</a>
   </header>
 
   <section class="card">
@@ -615,6 +655,157 @@ poll();
 """
 
 
+PAGE_TRANSACTIONS = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QI Trader — Transactions</title>
+""" + BASE_STYLE + """
+<style>
+  .wrap > * { min-width: 0; }  /* let .table-scroll shrink inside the grid */
+  .tiles { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+           margin-bottom: 0; }
+  .table-scroll { overflow-x: auto; }
+  .table-scroll table { white-space: nowrap; }
+  .side { display: inline-flex; align-items: center; gap: 6px; }
+  .dot.buy { background: var(--good); }
+  .dot.sell { background: var(--critical); }
+  .empty-note { color: var(--text-muted); font-size: 13px; padding: 14px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>QI Trader — Transactions</h1>
+    <a class="chip" href="/">&larr; Control</a>
+    <span class="chip" id="count-chip">loading…</span>
+  </header>
+
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <h2>Net positions</h2>
+        <p class="sub">Shares currently held per ticker (buys minus sells).</p>
+      </div>
+    </div>
+    <div class="tiles" id="pos-tiles"></div>
+    <div class="empty-note" id="pos-empty" hidden>No positions yet.</div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <div>
+        <h2>Transaction ledger</h2>
+        <p class="sub" id="ledger-sub">Every executed trade recorded in the
+          SQLite ledger.</p>
+      </div>
+      <div class="controls">
+        <label class="field"><span>Ticker filter</span>
+          <input id="q-ticker" maxlength="12" placeholder="all"></label>
+        <button id="refresh-btn" class="primary">Refresh</button>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th class="num">ID</th><th>Date/time (UTC)</th><th>Ticker</th>
+          <th>ISIN</th><th>Side</th><th class="num">Shares</th>
+          <th class="num">Price</th><th>Ccy</th><th class="num">Notional</th>
+          <th class="num">Commission</th><th>Status</th><th>Order ID</th>
+          <th>Account</th><th class="num">Conid</th><th>Recorded (UTC)</th>
+        </tr></thead>
+        <tbody id="tx-rows"></tbody>
+      </table>
+    </div>
+    <div class="empty-note" id="tx-empty" hidden>No transactions recorded
+      yet — rows appear here when orders fill.</div>
+  </section>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const fmt2 = (n) => n.toLocaleString(undefined,
+  { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const dash = (v) => (v === null || v === undefined || v === "") ? "—" : v;
+
+async function load() {
+  const q = $("q-ticker").value.trim().toUpperCase();
+  let data;
+  try {
+    const resp = await fetch("/api/transactions" +
+      (q ? "?ticker=" + encodeURIComponent(q) : ""));
+    data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || ("HTTP " + resp.status));
+  } catch (e) {
+    $("count-chip").textContent = "ledger unreachable: " + e.message;
+    return;
+  }
+  render(data);
+}
+
+function render(d) {
+  $("count-chip").textContent = d.total.toLocaleString() +
+    (d.total === 1 ? " transaction" : " transactions");
+
+  const tiles = d.positions.map(p => {
+    const tile = document.createElement("div"); tile.className = "tile";
+    const label = document.createElement("div"); label.className = "label";
+    label.textContent = p.ticker + " · " + p.trades +
+      (p.trades === 1 ? " trade" : " trades");
+    const value = document.createElement("div"); value.className = "value";
+    value.textContent = (p.shares > 0 ? "+" : "") + p.shares.toLocaleString();
+    tile.append(label, value);
+    return tile;
+  });
+  $("pos-tiles").replaceChildren(...tiles);
+  $("pos-empty").hidden = tiles.length > 0;
+
+  const rows = d.transactions.map(t => {
+    const tr = document.createElement("tr");
+    const cells = [
+      [t.id, 1], [t.datetime], [t.ticker], [dash(t.isin)], null /* side */,
+      [t.shares.toLocaleString(), 1], [fmt2(t.share_price), 1], [t.currency],
+      [fmt2(t.shares * t.share_price), 1],
+      [t.commission === null ? "—" : fmt2(t.commission), 1], [t.status],
+      [dash(t.order_id)], [dash(t.account_id)], [dash(t.conid), 1],
+      [t.created_at],
+    ];
+    for (const cell of cells) {
+      const td = document.createElement("td");
+      if (cell === null) {  // side: colored dot + label, never color alone
+        const side = document.createElement("span"); side.className = "side";
+        const dot = document.createElement("span");
+        dot.className = "dot " + (t.buy ? "buy" : "sell");
+        side.append(dot, document.createTextNode(t.buy ? "BUY" : "SELL"));
+        td.append(side);
+      } else {
+        if (cell[1]) td.className = "num";
+        td.textContent = cell[0];
+      }
+      tr.append(td);
+    }
+    return tr;
+  });
+  $("tx-rows").replaceChildren(...rows);
+  $("tx-empty").hidden = rows.length > 0;
+  $("ledger-sub").textContent = rows.length < d.total
+    ? "Showing the latest " + rows.length.toLocaleString() + " of " +
+      d.total.toLocaleString() + " trades in " + d.db_path
+    : "Every executed trade recorded in " + d.db_path;
+}
+
+$("refresh-btn").addEventListener("click", load);
+$("q-ticker").addEventListener("change", load);
+load();
+setInterval(load, 5000);
+</script>
+</body>
+</html>
+"""
+
+
 def create_app():
     app = web.Application()
     app["ticks"] = deque(maxlen=600)
@@ -622,7 +813,9 @@ def create_app():
     app["ingestion_task"] = None
     app["ticker"] = TICKER
     app.router.add_get("/", index)
+    app.router.add_get("/transactions", transactions_page)
     app.router.add_get("/api/status", api_status)
+    app.router.add_get("/api/transactions", api_transactions)
     app.router.add_post("/api/ingestion/start", api_ingestion_start)
     app.router.add_post("/api/ingestion/stop", api_ingestion_stop)
     app.router.add_post("/api/order", api_order)

@@ -14,6 +14,7 @@ Run directly for a one-off order:
 import asyncio
 import json
 import os
+import sqlite3
 import time
 import uuid
 from datetime import datetime
@@ -22,8 +23,10 @@ import aiohttp
 
 try:
     from agents.ib_gateway import GATEWAY_BASE_URL, TICKER, ssl_context
+    from agents import transactions
 except ImportError:  # when run directly as ./agents/execution.py
     from ib_gateway import GATEWAY_BASE_URL, TICKER, ssl_context
+    import transactions
 
 DRY_RUN = os.environ.get("DRY_RUN", "1") != "0"
 ALLOW_LIVE = os.environ.get("ALLOW_LIVE") == "1"
@@ -129,6 +132,26 @@ async def wait_for_status(session, order_id, timeout=60.0, poll_interval=2.0):
     return last
 
 
+def record_fill(order_state, account_id, ticker, quantity, limit_price):
+    """Writes a filled order into the transaction ledger (transactions.py).
+    Best-effort: a ledger problem must never look like a trading failure."""
+    if not order_state or order_state.get("status") != "Filled":
+        return
+    try:
+        row_id = transactions.record_transaction(
+            ticker=order_state.get("ticker") or ticker,
+            share_price=float(order_state.get("avgPrice") or limit_price),
+            shares=int(float(order_state.get("filledQuantity") or quantity)),
+            buy=order_state.get("side") or "BUY",
+            currency=order_state.get("cashCcy") or "USD",
+            order_id=str(order_state.get("orderId", "")) or None,
+            account_id=account_id,
+            conid=order_state.get("conid"))
+        print(f"  Recorded fill in transaction ledger (row {row_id}).")
+    except (sqlite3.Error, ValueError, TypeError) as e:
+        print(f"  WARNING: fill executed but not recorded in ledger: {e}")
+
+
 async def cancel_order(session, account_id, order_id):
     url = f"{GATEWAY_BASE_URL}/iserver/account/{account_id}/order/{order_id}"
     async with session.delete(url) as resp:
@@ -162,7 +185,9 @@ async def execute_signal(side, ticker, limit_price, quantity=1):
         order_id = placed["order_id"]
         print(f"  Order {order_id} submitted "
               f"({placed.get('order_status', 'status unknown')}).")
-        return await wait_for_status(session, order_id)
+        final = await wait_for_status(session, order_id)
+        record_fill(final, account_id, ticker, quantity, limit_price)
+        return final
     finally:
         await session.close()
 
