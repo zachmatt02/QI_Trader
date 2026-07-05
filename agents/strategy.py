@@ -7,16 +7,19 @@ import polars as pl
 
 try:
     from agents import features
-    from agents.execution import execute_signal
-    from agents.ingestion import DATA_DIR, load_recent_ticks
-    from agents.ib_gateway import TICKER
     from agents.risk import RiskManager
+    from gateway.execution import execute_signal
+    from gateway.ingestion import DATA_DIR, load_recent_ticks
+    from gateway.ib_gateway import TICKER
 except ImportError:  # when run directly as ./agents/strategy.py
-    import features
-    from execution import execute_signal
-    from ingestion import DATA_DIR, load_recent_ticks
-    from ib_gateway import TICKER
-    from risk import RiskManager
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from agents import features
+    from agents.risk import RiskManager
+    from gateway.execution import execute_signal
+    from gateway.ingestion import DATA_DIR, load_recent_ticks
+    from gateway.ib_gateway import TICKER
 
 POLL_SECONDS = float(os.environ.get("POLL_SECONDS", "5"))
 LOOKBACK_MINUTES = float(os.environ.get("LOOKBACK_MINUTES", "15"))
@@ -143,7 +146,7 @@ async def process_data_stream():
         df = load_recent_ticks(TICKER, minutes=LOOKBACK_MINUTES)
         if df.is_empty():
             print(f"[{now}] No {TICKER} ticks in the last {LOOKBACK_MINUTES:g} min — "
-                  "start the ingestion stream (dashboard or agents/ingestion.py).")
+                  "start the ingestion stream (dashboard or gateway/ingestion.py).")
             continue
         newest = df["timestamp"][-1]
         if last_seen is not None and newest <= last_seen:

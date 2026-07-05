@@ -2,7 +2,8 @@ import pytest
 import pytest_asyncio
 from aiohttp.test_utils import TestClient, TestServer
 
-from agents import dashboard, transactions
+import dashboard
+from gateway import transactions
 
 
 @pytest_asyncio.fixture

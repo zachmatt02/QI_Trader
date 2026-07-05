@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# agents/ingestion.py
+# gateway/ingestion.py
 import polars as pl
 import asyncio
 import io
@@ -10,11 +10,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 try:
-    from agents.ib_gateway import GATEWAY_BASE_URL, GATEWAY_WS_URL, TICKER, ssl_context
-except ImportError:  # when run directly as ./agents/ingestion.py
+    from gateway.ib_gateway import GATEWAY_BASE_URL, GATEWAY_WS_URL, TICKER, ssl_context
+except ImportError:  # when run directly as ./gateway/ingestion.py
     from ib_gateway import GATEWAY_BASE_URL, GATEWAY_WS_URL, TICKER, ssl_context
 
-# Client Portal streaming tick fields (see gateway/doc/RealtimeSubscription.md):
+# Client Portal streaming tick fields (see clientportal/doc/RealtimeSubscription.md):
 FIELD_LAST_PRICE = "31"
 FIELD_LAST_SIZE = "7059"
 

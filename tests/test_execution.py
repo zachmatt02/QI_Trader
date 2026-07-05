@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch
 
-from agents.execution import (build_order, get_account_id, place_order,
+from gateway.execution import (build_order, get_account_id, place_order,
                               execute_signal, wait_for_status)
 
 
@@ -56,7 +56,7 @@ def test_build_order_validates_input():
 
 @pytest.mark.asyncio
 async def test_get_account_id_refuses_live_account():
-    with patch("agents.execution.ALLOW_LIVE", False):
+    with patch("gateway.execution.ALLOW_LIVE", False):
         session = FakeSession([{"accounts": ["U1234567"]}])
         with pytest.raises(RuntimeError, match="paper"):
             await get_account_id(session)
@@ -96,8 +96,8 @@ async def test_execute_signal_dry_run_never_places_orders():
         [{"conid": "76792991"}],
         {"amount": {"total": "420.5 USD", "commission": "1 USD"}},
     ])
-    with patch("agents.execution.aiohttp") as fake_aiohttp, \
-         patch("agents.execution.DRY_RUN", True):
+    with patch("gateway.execution.aiohttp") as fake_aiohttp, \
+         patch("gateway.execution.DRY_RUN", True):
         fake_aiohttp.ClientSession.return_value = session
         result = await execute_signal("BUY", "TSLA", 420.0)
 
@@ -116,8 +116,8 @@ async def test_execute_signal_places_and_tracks_when_live():
         [{"order_id": "7", "order_status": "Submitted"}],
         {"orders": [{"orderId": 7, "status": "Filled"}]},
     ])
-    with patch("agents.execution.aiohttp") as fake_aiohttp, \
-         patch("agents.execution.DRY_RUN", False):
+    with patch("gateway.execution.aiohttp") as fake_aiohttp, \
+         patch("gateway.execution.DRY_RUN", False):
         fake_aiohttp.ClientSession.return_value = session
         result = await execute_signal("BUY", "TSLA", 420.0)
 

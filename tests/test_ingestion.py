@@ -3,8 +3,8 @@ import pytest
 from datetime import datetime
 from unittest.mock import patch
 
-from agents import ingestion
-from agents.ingestion import market_stream, main
+from gateway import ingestion
+from gateway.ingestion import market_stream, main
 
 @pytest.mark.asyncio
 async def test_market_stream_requires_gateway():
@@ -14,7 +14,7 @@ async def test_market_stream_requires_gateway():
     Points the gateway URL at an unreachable address so the test behaves the
     same whether or not a real gateway is running.
     """
-    with patch("agents.ingestion.GATEWAY_BASE_URL", "https://127.0.0.1:1/v1/api"):
+    with patch("gateway.ingestion.GATEWAY_BASE_URL", "https://127.0.0.1:1/v1/api"):
         stream = market_stream()
         with pytest.raises(aiohttp.ClientError):
             await anext(stream)
@@ -36,7 +36,7 @@ async def test_main(tmp_path, capsys, monkeypatch):
                 "volume": 100 + i
             }
 
-    with patch("agents.ingestion.market_stream", finite_market_stream):
+    with patch("gateway.ingestion.market_stream", finite_market_stream):
         await main()
 
     captured = capsys.readouterr()

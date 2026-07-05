@@ -13,8 +13,8 @@ __pycache__/
 # pytest cache
 .pytest_cache/
 
-# Gateway
-gateway/
+# IBKR Client Portal Gateway distribution (vendored Java app)
+clientportal/
 
 # Recorded tick data (written by the ingestion agent)
 data/

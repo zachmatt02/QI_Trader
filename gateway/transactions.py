@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# agents/transactions.py
+# gateway/transactions.py
 """Transaction ledger: one SQLite file (data/transactions.db) that records
 every executed trade in a single `transactions` table.
 
@@ -9,7 +9,7 @@ conid, commission, status) and a created_at insert timestamp.
 
 The Execution Agent inserts a row for each fill automatically. Run directly
 to initialise the database and print the recorded trades and net positions:
-  ./agents/transactions.py
+  ./gateway/transactions.py
 """
 import os
 import sqlite3

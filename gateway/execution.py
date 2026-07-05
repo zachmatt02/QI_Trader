@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# agents/execution.py
+# gateway/execution.py
 """Execution Agent: places stock orders through the IBKR Client Portal Gateway.
 
 Safety rails:
@@ -9,7 +9,7 @@ Safety rails:
     unless ALLOW_LIVE=1 is set explicitly.
 
 Run directly for a one-off order:
-  DRY_RUN=0 SIDE=BUY QTY=1 LIMIT_PRICE=420 TICKER=TSLA ./agents/execution.py
+  DRY_RUN=0 SIDE=BUY QTY=1 LIMIT_PRICE=420 TICKER=TSLA ./gateway/execution.py
 """
 import asyncio
 import json
@@ -22,9 +22,9 @@ from datetime import datetime
 import aiohttp
 
 try:
-    from agents.ib_gateway import GATEWAY_BASE_URL, TICKER, ssl_context
-    from agents import transactions
-except ImportError:  # when run directly as ./agents/execution.py
+    from gateway.ib_gateway import GATEWAY_BASE_URL, TICKER, ssl_context
+    from gateway import transactions
+except ImportError:  # when run directly as ./gateway/execution.py
     from ib_gateway import GATEWAY_BASE_URL, TICKER, ssl_context
     import transactions
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# agents/dashboard.py
+# dashboard.py
 """Control dashboard for the ingestion and execution agents.
 
 Serves a small web UI on http://127.0.0.1:8080 (localhost only, since it can
@@ -14,7 +14,7 @@ Submit button is disabled and the API refuses to place orders — only previews
 work. Start with DRY_RUN=0 to enable submission; non-paper accounts are still
 refused unless ALLOW_LIVE=1.
 
-Run:  ./venv/bin/python agents/dashboard.py   (or DASHBOARD_PORT=<port> ...)
+Run:  ./venv/bin/python dashboard.py   (or DASHBOARD_PORT=<port> ...)
 """
 import asyncio
 import os
@@ -24,14 +24,8 @@ from collections import deque
 import aiohttp
 from aiohttp import web
 
-try:
-    from agents import execution, ingestion, transactions
-    from agents.ib_gateway import GATEWAY_BASE_URL, TICKER, ssl_context
-except ImportError:  # when run directly as ./agents/dashboard.py
-    import execution
-    import ingestion
-    import transactions
-    from ib_gateway import GATEWAY_BASE_URL, TICKER, ssl_context
+from gateway import execution, ingestion, transactions
+from gateway.ib_gateway import GATEWAY_BASE_URL, TICKER, ssl_context
 
 DASHBOARD_PORT = int(os.environ.get("DASHBOARD_PORT", "8080"))
 

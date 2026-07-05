@@ -1,6 +1,6 @@
 import pytest
 
-from agents import transactions
+from gateway import transactions
 
 
 @pytest.fixture(autouse=True)

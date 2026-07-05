@@ -2,7 +2,7 @@ import sqlite3
 
 import pytest
 
-from agents import execution, transactions
+from gateway import execution, transactions
 
 
 def test_record_and_list_transaction(tmp_path):

@@ -4,7 +4,7 @@
 LOG_FILE="gateway.log"
 GATEWAY_CLASS="ibgroup.web.core.clientportal.gw.GatewayStart"
 DASHBOARD_LOG="dashboard.log"
-DASHBOARD_SCRIPT="agents/dashboard.py"
+DASHBOARD_SCRIPT="dashboard.py"
 
 stop_gateway() {
     # Find the process ID of the running Gateway Java application
@@ -43,7 +43,7 @@ start_gateway() {
 
     # Get the directory of this script
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    cd "$SCRIPT_DIR/gateway" || exit 1
+    cd "$SCRIPT_DIR/clientportal" || exit 1
 
     # Run detached using nohup, writing logs to the parent directory
     nohup ./bin/run.sh root/conf.yaml > "$SCRIPT_DIR/$LOG_FILE" 2>&1 &

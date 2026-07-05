@@ -5,11 +5,11 @@ The safety checkpoint. This holds automated diagnostic scripts that check your c
 ## Test Files
 
 ### 1. Ingestion Agent Test (`test_ingestion.py`)
-This test suite verifies the functionality of the Data Ingestion Agent (`agents/ingestion.py`).
+This test suite verifies the functionality of the Data Ingestion Agent (`gateway/ingestion.py`).
 
 #### How the Tests Work
 * **Path Resolution**:
-  - `pyproject.toml` sets `[tool.pytest.ini_options] pythonpath = ["."]`, which puts the repo root on Python's path so the tests can import the `agents` package directly.
+  - `pyproject.toml` sets `[tool.pytest.ini_options] pythonpath = ["."]`, which puts the repo root on Python's path so the tests can import the `agents` and `gateway` packages directly.
 * **Async Integration (`pytest-asyncio`)**:
   - Since the ingestion code is asynchronous (using async generator loops and coroutines), the tests are marked with `@pytest.mark.asyncio` to execute them inside a running async event loop.
 * **Mock Market Stream Test (`test_mock_market_stream`)**:

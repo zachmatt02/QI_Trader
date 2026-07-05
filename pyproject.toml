@@ -19,7 +19,8 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["agents"]
+packages = ["agents", "gateway"]
+py-modules = ["dashboard"]
 
 [tool.pytest.ini_options]
 # Puts the repo root on sys.path so tests can import `agents` without hacks.

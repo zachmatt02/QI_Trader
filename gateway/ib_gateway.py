@@ -1,8 +1,8 @@
-# agents/ib_gateway.py
+# gateway/ib_gateway.py
 """Shared connection settings for the IBKR Client Portal Gateway
-(the gateway/ folder in this repo).
+(the clientportal/ folder in this repo).
 
-Start it with:  cd gateway && bin/run.sh root/conf.yaml   (or ./start.sh)
+Start it with:  cd clientportal && bin/run.sh root/conf.yaml   (or ./gateway.sh)
 then log in once via a browser at https://localhost:5001
 (root/conf.yaml sets listenPort: 5001 with SSL enabled).
 """
