@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# gateway.sh - Manage the IBKR Client Portal Gateway and dashboard processes
+# gateway.sh - Manage the IBKR Client Portal Gateway, dashboard and main loop
 
 LOG_FILE="gateway.log"
 GATEWAY_CLASS="ibgroup.web.core.clientportal.gw.GatewayStart"
 DASHBOARD_LOG="dashboard.log"
 DASHBOARD_SCRIPT="dashboard.py"
+MAIN_LOG="main.log"
+MAIN_SCRIPT="main.py"
 
 stop_gateway() {
     # Find the process ID of the running Gateway Java application
@@ -110,11 +112,60 @@ start_dashboard() {
     fi
 }
 
+stop_main() {
+    PID=$(pgrep -f "$MAIN_SCRIPT")
+    if [ -n "$PID" ]; then
+        echo "Stopping main loop (PID: $PID)..."
+        kill "$PID"
+
+        for i in {1..10}; do
+            if ! ps -p "$PID" > /dev/null 2>&1; then
+                echo "Main loop stopped successfully."
+                return 0
+            fi
+            sleep 0.5
+        done
+
+        echo "Main loop did not stop. Forcing shutdown..."
+        kill -9 "$PID"
+        echo "Main loop force killed."
+    else
+        echo "Main loop is not running."
+    fi
+}
+
+start_main() {
+    # Check if already running
+    PID=$(pgrep -f "$MAIN_SCRIPT")
+    if [ -n "$PID" ]; then
+        echo "Main loop is already running (PID: $PID). Stop it first (-e) to change DRY_RUN."
+        return 0
+    fi
+
+    echo "Starting main loop detached (DRY_RUN=$DRY_RUN)..."
+
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    cd "$SCRIPT_DIR" || exit 1
+
+    nohup env DRY_RUN="$DRY_RUN" ./venv/bin/python -u "$MAIN_SCRIPT" > "$SCRIPT_DIR/$MAIN_LOG" 2>&1 &
+
+    sleep 1.5
+    NEW_PID=$(pgrep -f "$MAIN_SCRIPT")
+    if [ -n "$NEW_PID" ]; then
+        echo "Main loop started successfully in background (PID: $NEW_PID)."
+        echo "Logs are being written to: $SCRIPT_DIR/$MAIN_LOG"
+    else
+        echo "Warning: Main loop started in background, but the process was not immediately detected."
+        echo "Please check the log file for errors: $SCRIPT_DIR/$MAIN_LOG"
+    fi
+}
+
 # Handle arguments
 DRY_RUN=0   # orders enabled by default; pass -dr to run in preview-only mode
 for arg in "$@"; do
   case $arg in
     -e)
+      stop_main
       stop_dashboard
       stop_gateway
       exit 0
@@ -124,14 +175,15 @@ for arg in "$@"; do
       ;;
     *)
       echo "Usage: $0 [-e] [-dr]"
-      echo "  (No arguments): Starts the gateway and dashboard detached (DRY_RUN off — orders can be submitted)."
+      echo "  (No arguments): Starts the gateway, dashboard and main loop detached (DRY_RUN off — orders can be submitted)."
       echo "  -dr           : Starts with DRY_RUN on (preview only, order submission disabled)."
-      echo "  -e            : Exits/stops the running gateway and dashboard."
+      echo "  -e            : Exits/stops the running gateway, dashboard and main loop."
       exit 1
       ;;
   esac
 done
 
-# If no arguments/options are provided, start the gateway and dashboard
+# If no arguments/options are provided, start the gateway, dashboard and main loop
 start_gateway
 start_dashboard
+start_main

@@ -18,3 +18,6 @@ clientportal/
 
 # Recorded tick data (written by the ingestion agent)
 data/
+
+# Log files
+*.log

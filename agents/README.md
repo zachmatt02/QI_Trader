@@ -1,20 +1,46 @@
-# QI Trader Agents
+# Agents
 
-The decision-making side of the pipeline: everything AI/strategy related lives here. These modules read the market data recorded by the gateway side (`gateway/`), decide trades, and enforce the safety limits every signal must pass before it reaches the broker.
+AI side of QI Trader. Everything that talks to a model lives here;
+broker/market plumbing lives in `gateway/`.
 
-## Files
+## strategy.py
 
-### Strategy Agent (`strategy.py`)
-* **Role**: Watches the recorded market data and decides trades.
-* **Functionality**:
-  * Polls the ticks recorded by the ingestion agent (`data/ticks/`, last `LOOKBACK_MINUTES` window every `POLL_SECONDS`) and skips rounds with no new data.
-  * Two swappable decision makers returning `{decision, confidence, reasoning}`:
-    * `STRATEGY=baseline` (default): deterministic SMA-crossover rule (`features.py` windows) — the benchmark the AI has to beat.
-    * `STRATEGY=ai`: sends the window to an AI model (currently mocked; includes API examples) for a `BUY`/`SELL`/`HOLD` decision.
-  * Every actionable signal must pass `risk.RiskManager` before it is forwarded to the Execution Agent (`gateway/execution.py`, `ORDER_QTY` shares, latest tick as limit price); fills update position and realized P&L.
+Daily news impressions. Pulls the last 24h of market news from the Massive
+API (`MassiveKey` in `.env`), sends a digest to Gemini (`AIKEY` in `.env`),
+and stores the model's read of the market in `data/impressions.db`:
 
-### Technical Indicators (`features.py`)
-Not an agent — rolling indicators over tick DataFrames: `compute_indicators()` (short/long SMA, VWAP; windows via `SHORT_WINDOW`/`LONG_WINDOW`, in ticks) and `summarize()` (a compact dict of the window for LLM prompts and logging).
+- **industry** — niche industry groups (e.g. "Chip Fabricator", not "Tech")
+  with `sentiment` and `recent_activity`, both 1-10 (1 = doing poorly,
+  10 = doing amazing).
+- **company** — individual tickers linked to an industry (`industry_id`),
+  same two scores, plus fundamentals from Massive: P/E ratio, market cap,
+  current share price and Y/Y performance.
 
-### Risk Rails (`risk.py`)
-Not an agent — `RiskManager` vetoes orders that break the hard limits, all enforced in code (never by the model): `MAX_POSITION` (±shares), `MAX_ORDER_NOTIONAL`, `ORDER_COOLDOWN_SECONDS` between order attempts, `MAX_DAILY_LOSS` (realized, per day), and a kill switch (`touch data/KILL_SWITCH` blocks all orders until removed). Position/P&L state survives restarts in `data/risk/<ticker>.json`.
+Re-running upserts in place, so the tables always hold the current
+impression per industry/ticker.
+
+```sh
+./agents/strategy.py
+```
+
+## decision.py
+
+Decision Agent. Reads the impressions plus current holdings (transaction
+ledger), sends the snapshot to Gemini and asks for its own judgement:
+possible BUYs, SELLs of held tickers, or HOLD. Decisions land in a
+`decision` audit table in the same DB (ticker, action, confidence 1-10,
+limit price, quantity, reasoning, executed flag). Nothing is traded here.
+
+```sh
+./agents/decision.py
+```
+
+## Putting it together
+
+`main.py` at the project root is the running entry point: an hourly loop
+of strategy → decision → `gateway/execution.py` for the decisions that
+clear its guardrails (confidence, order cap, quantity cap, DRY_RUN).
+
+```sh
+./main.py
+```
