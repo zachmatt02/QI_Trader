@@ -10,14 +10,19 @@ Safety rails:
 
 Run directly for a one-off order:
   DRY_RUN=0 SIDE=BUY QTY=1 LIMIT_PRICE=420 TICKER=TSLA ./gateway/execution.py
+
+Backfill fills the ledger missed (also runs at the start of every main.py
+cycle):
+  ./gateway/execution.py reconcile
 """
 import asyncio
 import json
 import os
 import sqlite3
+import sys
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import aiohttp
 
@@ -35,6 +40,9 @@ ALLOW_LIVE = os.environ.get("ALLOW_LIVE") == "1"
 # warnings etc.) instead of an order id; each must be confirmed via
 # /iserver/reply before the order is actually submitted.
 MAX_CONFIRMATIONS = 5
+
+# Once an order reaches one of these it will never fill any further.
+TERMINAL_STATUSES = ("Filled", "Cancelled", "Inactive")
 
 
 async def get_account_id(session):
@@ -126,10 +134,71 @@ async def wait_for_status(session, order_id, timeout=60.0, poll_interval=2.0):
                 if order.get("status") != last_status:
                     last_status = order.get("status")
                     print(f"  Order {order_id}: {last_status}")
-                if last_status in ("Filled", "Cancelled", "Inactive"):
+                if last_status in TERMINAL_STATUSES:
                     return last
         await asyncio.sleep(poll_interval)
     return last
+
+
+async def fetch_orders(session):
+    """Returns the account's orders for the day. The endpoint answers []
+    on its first call while the gateway warms up, so an empty result is
+    retried once."""
+    for attempt in (1, 2):
+        async with session.get(f"{GATEWAY_BASE_URL}/iserver/account/orders") as resp:
+            data = await resp.json()
+        orders = data.get("orders") or []
+        if orders or attempt == 2:
+            return orders
+        await asyncio.sleep(1)
+
+
+async def reconcile_fills():
+    """Backfills the transaction ledger with fills it missed: an order that
+    fills after wait_for_status stops polling (or while this process is
+    down) never goes through record_fill. Scans the day's orders on the
+    gateway and records every terminal order with filled shares whose order
+    id the ledger does not know yet. Best-effort: returns the number of
+    rows added, 0 if the gateway is unreachable."""
+    session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=ssl_context()))
+    try:
+        account_id = await get_account_id(session)
+        orders = await fetch_orders(session)
+    except Exception as e:
+        print(f"  Fill reconciliation skipped (gateway not available: {e})")
+        return 0
+    finally:
+        await session.close()
+
+    known = transactions.recorded_order_ids()
+    added = 0
+    for order in orders:
+        order_id = str(order.get("orderId") or "")
+        filled = int(float(order.get("filledQuantity") or 0))
+        if (order.get("status") not in TERMINAL_STATUSES or filled <= 0
+                or not order_id or order_id in known):
+            continue
+        price = order.get("avgPrice") or order.get("price")
+        filled_at = order.get("lastExecutionTime_r")  # epoch milliseconds
+        try:
+            row_id = transactions.record_transaction(
+                ticker=order.get("ticker"),
+                share_price=float(price),
+                shares=filled,
+                buy=order.get("side") or "BUY",
+                currency=order.get("cashCcy") or "USD",
+                when=(datetime.fromtimestamp(filled_at / 1000, timezone.utc)
+                      if filled_at else None),
+                order_id=order_id,
+                account_id=account_id,
+                conid=order.get("conid"))
+            print(f"  Reconciled missed fill: {order.get('side', 'BUY')} "
+                  f"{filled} {order.get('ticker')} @ {price} "
+                  f"(order {order_id}, row {row_id}).")
+            added += 1
+        except (sqlite3.Error, ValueError, TypeError, AttributeError) as e:
+            print(f"  WARNING: could not reconcile order {order_id}: {e}")
+    return added
 
 
 def record_fill(order_state, account_id, ticker, quantity, limit_price):
@@ -193,6 +262,11 @@ async def execute_signal(side, ticker, limit_price, quantity=1):
 
 
 async def main():
+    if "reconcile" in sys.argv[1:]:
+        print("Reconciling the transaction ledger with today's orders...")
+        added = await reconcile_fills()
+        print(f"Reconciliation done: {added} fill(s) added.")
+        return
     print("Starting Execution Agent...")
     price = os.environ.get("LIMIT_PRICE")
     if price is None:

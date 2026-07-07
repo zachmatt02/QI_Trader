@@ -21,3 +21,4 @@ data/
 
 # Log files
 *.log
+logs/

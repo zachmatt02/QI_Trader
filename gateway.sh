@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # gateway.sh - Manage the IBKR Client Portal Gateway, dashboard and main loop
 
-LOG_FILE="gateway.log"
+LOG_DIR="logs"
+LOG_FILE="$LOG_DIR/gateway.log"
 GATEWAY_CLASS="ibgroup.web.core.clientportal.gw.GatewayStart"
-DASHBOARD_LOG="dashboard.log"
+DASHBOARD_LOG="$LOG_DIR/dashboard.log"
 DASHBOARD_SCRIPT="dashboard.py"
-MAIN_LOG="main.log"
+MAIN_LOG="$LOG_DIR/main.log"
 MAIN_SCRIPT="main.py"
 
 stop_gateway() {
@@ -45,6 +46,7 @@ start_gateway() {
 
     # Get the directory of this script
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    mkdir -p "$SCRIPT_DIR/$LOG_DIR"
     cd "$SCRIPT_DIR/clientportal" || exit 1
 
     # Run detached using nohup, writing logs to the parent directory
@@ -58,6 +60,7 @@ start_gateway() {
     if [ -n "$NEW_PID" ]; then
         echo "Gateway started successfully in background (PID: $NEW_PID)."
         echo "Logs are being written to: $SCRIPT_DIR/$LOG_FILE"
+        echo "Please log in at https://localhost:5001 to authenticate the gateway session."
     else
         echo "Warning: Gateway started in background, but the Java process was not immediately detected."
         echo "Please check the log file for errors: $SCRIPT_DIR/$LOG_FILE"
@@ -97,6 +100,7 @@ start_dashboard() {
     echo "Starting dashboard detached (DRY_RUN=$DRY_RUN)..."
 
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    mkdir -p "$SCRIPT_DIR/$LOG_DIR"
     cd "$SCRIPT_DIR" || exit 1
 
     nohup env DRY_RUN="$DRY_RUN" ./venv/bin/python "$DASHBOARD_SCRIPT" > "$SCRIPT_DIR/$DASHBOARD_LOG" 2>&1 &
@@ -145,6 +149,7 @@ start_main() {
     echo "Starting main loop detached (DRY_RUN=$DRY_RUN)..."
 
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    mkdir -p "$SCRIPT_DIR/$LOG_DIR"
     cd "$SCRIPT_DIR" || exit 1
 
     nohup env DRY_RUN="$DRY_RUN" ./venv/bin/python -u "$MAIN_SCRIPT" > "$SCRIPT_DIR/$MAIN_LOG" 2>&1 &

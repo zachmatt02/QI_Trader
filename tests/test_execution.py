@@ -1,8 +1,10 @@
 import pytest
 from unittest.mock import patch
 
+from gateway import transactions
 from gateway.execution import (build_order, get_account_id, place_order,
-                              execute_signal, wait_for_status)
+                              execute_signal, reconcile_fills,
+                              wait_for_status)
 
 
 class FakeResponse:
@@ -122,3 +124,53 @@ async def test_execute_signal_places_and_tracks_when_live():
         result = await execute_signal("BUY", "TSLA", 420.0)
 
     assert result["status"] == "Filled"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_fills_backfills_missed_fills():
+    # order 7 was already recorded by record_fill during its own cycle
+    transactions.record_transaction("SMCI", 27.24, 5, "BUY", order_id="7")
+    session = FakeSession([
+        {"accounts": ["DUR149933"]},
+        {"orders": []},  # first call warms the endpoint up; retried once
+        {"orders": [
+            {"orderId": 7, "status": "Filled", "ticker": "SMCI",
+             "filledQuantity": 5, "avgPrice": "27.24", "side": "BUY"},
+            # filled after wait_for_status stopped polling -> must be added
+            {"orderId": 8, "status": "Filled", "ticker": "NVDA",
+             "filledQuantity": 5, "avgPrice": "194.42", "side": "BUY",
+             "cashCcy": "USD", "conid": 4815747,
+             "lastExecutionTime_r": 1783346798000},
+            # still working -> must NOT be recorded yet
+            {"orderId": 9, "status": "Submitted", "ticker": "HOOD",
+             "filledQuantity": 0, "price": 113.5, "side": "BUY"},
+            # partial fill then cancelled -> the filled shares count
+            {"orderId": 10, "status": "Cancelled", "ticker": "WRAP",
+             "filledQuantity": 4, "avgPrice": 1.44, "side": "BUY"},
+        ]},
+    ])
+    with patch("gateway.execution.aiohttp") as fake_aiohttp:
+        fake_aiohttp.ClientSession.return_value = session
+        added = await reconcile_fills()
+
+    assert added == 2
+    assert transactions.position("NVDA") == 5
+    assert transactions.position("WRAP") == 4
+    assert transactions.position("HOOD") == 0
+    assert transactions.count_transactions("SMCI") == 1  # no duplicate
+    nvda = transactions.list_transactions("NVDA")[0]
+    assert nvda["share_price"] == 194.42
+    assert nvda["order_id"] == "8"
+    assert nvda["account_id"] == "DUR149933"
+    assert nvda["datetime"] == "2026-07-06T14:06:38Z"  # broker fill time
+
+
+@pytest.mark.asyncio
+async def test_reconcile_fills_survives_gateway_outage():
+    with patch("gateway.execution.aiohttp") as fake_aiohttp, \
+         patch("gateway.execution.get_account_id",
+               side_effect=RuntimeError("gateway returned HTTP 401")):
+        fake_aiohttp.ClientSession.return_value = FakeSession([])
+        added = await reconcile_fills()
+    assert added == 0
+    assert transactions.count_transactions() == 0

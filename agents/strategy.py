@@ -23,34 +23,25 @@ Run directly to score today's news and print the stored impressions:
   ./agents/strategy.py
 """
 import asyncio
-import json
 import os
 import sqlite3
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import aiohttp
 
 _ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
 
-
-def _load_env(env_file=_ROOT / ".env"):
-    """Loads KEY=value lines from .env without overriding real env vars."""
-    if not env_file.exists():
-        return
-    for line in env_file.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip().strip("'\""))
-
+# Every LLM call goes through agents/ai.py; _parse_ai_json is re-exported here
+# because the tests (and decision.py, historically) import it from strategy.
+from agents.ai import (_load_env, _parse_ai_json, _require_key, active_label, generate_json)
 
 _load_env()
 
 DB_PATH = Path(os.environ.get("IMPRESSIONS_DB", _ROOT / "data" / "impressions.db"))
 MASSIVE_BASE = os.environ.get("MASSIVE_BASE_URL", "https://api.massive.com")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 NEWS_LIMIT = int(os.environ.get("NEWS_LIMIT", "80"))
 MAX_COMPANIES = int(os.environ.get("MAX_COMPANIES", "15"))
 MASSIVE_RPM = int(os.environ.get("MASSIVE_RPM", "5"))  # 0 = unlimited plan
@@ -93,13 +84,6 @@ def connect(db_path=None):
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(_SCHEMA)
     return conn
-
-
-def _require_key(name):
-    key = os.environ.get(name)
-    if not key:
-        raise RuntimeError(f"{name} is not set (expected in {_ROOT / '.env'})")
-    return key
 
 
 # --------------------------------------------------------------------------
@@ -277,32 +261,12 @@ def build_prompt(articles, known_industries=()):
         digest=news_digest(articles))
 
 
-def _parse_ai_json(data):
-    """Extracts the structured JSON payload from a generateContent reply."""
-    try:
-        text = data["candidates"][0]["content"]["parts"][0]["text"]
-    except (KeyError, IndexError) as exc:
-        raise RuntimeError(f"Unexpected Gemini response: {data}") from exc
-    return json.loads(text)
-
-
 async def score_news(session, articles, known_industries=()):
-    """Sends the news digest to Gemini and returns its impressions dict."""
-    url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
-           f"{GEMINI_MODEL}:generateContent")
-    payload = {
-        "contents": [{"parts": [{"text": build_prompt(articles,
-                                                      known_industries)}]}],
-        "generationConfig": {
-            "responseMimeType": "application/json",
-            "responseSchema": _RESPONSE_SCHEMA,
-        },
-    }
-    headers = {"x-goog-api-key": _require_key("AIKEY")}
-    async with session.post(url, json=payload, headers=headers,
-                            timeout=aiohttp.ClientTimeout(total=180)) as resp:
-        resp.raise_for_status()
-        return _parse_ai_json(await resp.json())
+    """Sends the news digest to the AI provider and returns its impressions
+    dict; the provider and its request shape live in agents/ai.py."""
+    return await generate_json(session, build_prompt(articles,
+                                                     known_industries),
+                               _RESPONSE_SCHEMA)
 
 
 # --------------------------------------------------------------------------
@@ -410,7 +374,7 @@ async def run_daily(db_path=None):
         known = [r[0] for r in conn.execute(
             "SELECT name FROM industry ORDER BY name")]
         conn.close()
-        print(f"Fetched {len(articles)} articles; scoring with {GEMINI_MODEL}...")
+        print(f"Fetched {len(articles)} articles; scoring with {active_label()}...")
         impressions = await score_news(session, articles, known)
 
         tickers = [c["ticker"].strip().upper()

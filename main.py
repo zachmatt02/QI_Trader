@@ -3,6 +3,8 @@
 """QI Trader main loop: connects the whole pipeline and runs it hourly.
 
 Each cycle:
+  0. gateway/execution.py reconcile_fills -- backfill the transaction ledger
+     with any fills that landed after the previous cycle stopped watching.
   1. agents/strategy.py  -- pull the day's news from Massive, score it with
      Gemini, refresh the impressions DB (industries + companies).
   2. agents/decision.py  -- have Gemini judge those impressions against
@@ -81,6 +83,9 @@ async def act_on(decisions, db_path=None):
 async def run_cycle():
     print(f"\n=== Cycle started {datetime.now():%Y-%m-%d %H:%M:%S} "
           f"(DRY_RUN={'on' if execution.DRY_RUN else 'OFF -- live orders!'}) ===")
+    # Catch fills that landed after execution.py stopped polling last cycle,
+    # so positions are accurate before any new decisions are made.
+    await execution.reconcile_fills()
     articles, industries, companies = await strategy.run_daily()
     print(f"Impressions updated: {industries} industries, "
           f"{companies} companies from {articles} articles.")

@@ -113,6 +113,17 @@ def list_transactions(ticker=None, limit=100, db_path=None):
         conn.close()
 
 
+def recorded_order_ids(db_path=None):
+    """Broker order ids already present in the ledger, as a set of strings."""
+    conn = connect(db_path)
+    try:
+        rows = conn.execute("""SELECT DISTINCT order_id FROM transactions
+                               WHERE order_id IS NOT NULL""").fetchall()
+        return {str(row[0]) for row in rows}
+    finally:
+        conn.close()
+
+
 def position(ticker, db_path=None):
     """Net shares currently held for `ticker` (buys minus sells)."""
     conn = connect(db_path)

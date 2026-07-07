@@ -14,7 +14,6 @@ Run directly to decide once and print the result (nothing is traded here):
   ./agents/decision.py
 """
 import asyncio
-import json
 import os
 import sys
 from pathlib import Path
@@ -23,8 +22,8 @@ import aiohttp
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from agents.strategy import (GEMINI_MODEL, _parse_ai_json, _require_key,
-                             connect)
+from agents.ai import generate_json
+from agents.strategy import connect
 from gateway import transactions
 
 MIN_CONFIDENCE = int(os.environ.get("MIN_CONFIDENCE", "7"))
@@ -142,21 +141,10 @@ Rules:
 
 
 async def call_gemini(session, prompt):
-    """Sends the snapshot prompt to Gemini and returns its JSON verdict."""
-    url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
-           f"{GEMINI_MODEL}:generateContent")
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "responseMimeType": "application/json",
-            "responseSchema": _RESPONSE_SCHEMA,
-        },
-    }
-    headers = {"x-goog-api-key": _require_key("AIKEY")}
-    async with session.post(url, json=payload, headers=headers,
-                            timeout=aiohttp.ClientTimeout(total=180)) as resp:
-        resp.raise_for_status()
-        return _parse_ai_json(await resp.json())
+    """Sends the snapshot prompt to the AI provider and returns its JSON
+    verdict. The name is historical -- the provider is whatever agents/ai.py
+    is configured for -- but it stays stable because the tests patch it."""
+    return await generate_json(session, prompt, _RESPONSE_SCHEMA)
 
 
 def save_decisions(verdict, db_path=None):
