@@ -36,9 +36,8 @@ sys.path.insert(0, str(_ROOT))
 
 # Every LLM call goes through agents/ai.py; _parse_ai_json is re-exported here
 # because the tests (and decision.py, historically) import it from strategy.
-from agents.ai import (_load_env, _parse_ai_json, _require_key, active_label, generate_json)
-
-_load_env()
+# Importing agents.ai also loads the project .env as a side effect.
+from agents.ai import (_parse_ai_json, _require_key, active_label, generate_json)
 
 DB_PATH = Path(os.environ.get("IMPRESSIONS_DB", _ROOT / "data" / "impressions.db"))
 MASSIVE_BASE = os.environ.get("MASSIVE_BASE_URL", "https://api.massive.com")
@@ -377,9 +376,11 @@ async def run_daily(db_path=None):
         print(f"Fetched {len(articles)} articles; scoring with {active_label()}...")
         impressions = await score_news(session, articles, known)
 
-        tickers = [c["ticker"].strip().upper()
-                   for c in impressions.get("companies", [])][:MAX_COMPANIES]
         impressions["companies"] = impressions.get("companies", [])[:MAX_COMPANIES]
+        # dedup: a ticker the model repeats would burn 4 throttled Massive
+        # calls (~48s at the default MASSIVE_RPM=5) fetching the same facts
+        tickers = list(dict.fromkeys(c["ticker"].strip().upper()
+                                     for c in impressions["companies"]))
         eta = ("" if MASSIVE_RPM <= 0 else
                f" (~{len(tickers) * 4 * 60 // MASSIVE_RPM // 60} min at "
                f"MASSIVE_RPM={MASSIVE_RPM}; set MASSIVE_RPM=0 for paid plans)")

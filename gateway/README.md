@@ -7,7 +7,7 @@ Everything that talks to the IBKR Client Portal Gateway: market-data ingestion, 
 ### Data Ingestion Agent (`ingestion.py`)
 * **Role**: Handles real-time market data ingestion.
 * **Functionality**:
-  * Streams live ticks from the IBKR gateway websocket (falls back to a simulated stream when the gateway is unreachable).
+  * Streams live ticks from the IBKR gateway websocket (raises if the gateway is unreachable or its session is not authenticated).
   * Buffers and batches incoming market ticks (`TickStore`: flushes every 20 ticks or 5 seconds).
   * Records each batch to `data/ticks/<ticker>-<date>.ndjson` so the Strategy Agent (`agents/strategy.py`) can read it back with `load_recent_ticks()` (strict Polars schema, safe to read while being appended).
 

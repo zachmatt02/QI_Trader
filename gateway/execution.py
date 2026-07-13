@@ -44,6 +44,10 @@ MAX_CONFIRMATIONS = 5
 # Once an order reaches one of these it will never fill any further.
 TERMINAL_STATUSES = ("Filled", "Cancelled", "Inactive")
 
+# Fat-finger ceiling: this system trades 1-10 shares (main.py caps at
+# MAX_QTY), so any order near this is a bug, not a strategy.
+MAX_ORDER_QTY = 100
+
 
 async def get_account_id(session):
     async with session.get(f"{GATEWAY_BASE_URL}/iserver/accounts") as resp:
@@ -71,8 +75,8 @@ def build_order(conid, side, quantity, price=None, order_type="LMT", tif="DAY"):
     side = side.upper()
     if side not in ("BUY", "SELL"):
         raise ValueError(f"side must be BUY or SELL, got {side!r}")
-    if quantity <= 0:
-        raise ValueError(f"quantity must be positive, got {quantity}")
+    if not 0 < quantity <= MAX_ORDER_QTY:
+        raise ValueError(f"quantity must be 1-{MAX_ORDER_QTY}, got {quantity}")
     order = {
         "conid": conid,
         "orderType": order_type,
@@ -219,12 +223,6 @@ def record_fill(order_state, account_id, ticker, quantity, limit_price):
         print(f"  Recorded fill in transaction ledger (row {row_id}).")
     except (sqlite3.Error, ValueError, TypeError) as e:
         print(f"  WARNING: fill executed but not recorded in ledger: {e}")
-
-
-async def cancel_order(session, account_id, order_id):
-    url = f"{GATEWAY_BASE_URL}/iserver/account/{account_id}/order/{order_id}"
-    async with session.delete(url) as resp:
-        return await resp.json()
 
 
 async def execute_signal(side, ticker, limit_price, quantity=1):
